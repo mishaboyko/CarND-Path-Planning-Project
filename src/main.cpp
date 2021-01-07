@@ -63,14 +63,16 @@ int main() {
     // Set to Max. allowed velocity first (49.5 mph)
     double target_velocity = 49.5;
 
+    double current_velocity = 0.01;
+
     const double MAX_HORIZON = 50;
 
     const double SAMPLE_PTS_DIST = 30.f; //in m
 
     const double MPH_MPS_factor = 2.24;
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s, &map_waypoints_dx,&map_waypoints_dy, &OFFSET_FROM_LANE_MID,
-              &curr_lane, &next_d, &target_velocity, &MAX_HORIZON, &SAMPLE_PTS_DIST, &MPH_MPS_factor]
+  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s, &map_waypoints_dx, &map_waypoints_dy, &OFFSET_FROM_LANE_MID,
+              &curr_lane, &next_d, &target_velocity, &current_velocity, &MAX_HORIZON, &SAMPLE_PTS_DIST, &MPH_MPS_factor]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -167,17 +169,28 @@ int main() {
 
               // react on leading vehicle
               if(leading_vehicle_s > reference_s_value && (leading_vehicle_s - reference_s_value) < 10){
-                std::cout << "Leading vehicle detected. Ego Speed adjusted" << std::endl;
+                std::cout << "Leading vehicle detected. Slowing down to target velocity" << std::endl;
                 target_velocity = leading_vehicle_speed * MPH_MPS_factor;
                 leading_vehicle_detected = true;
               }
             }
           }
-          // re-set target vehicle if there's no vehicle ahead (anymore).
-          if(!leading_vehicle_detected && car_speed < 48){
-            std::cout << car_speed << std::endl;
-            std::cout << "Speed restored to MAX" << std::endl;
+          // better idea: go through each reference point and change the velocity there.
+          if(leading_vehicle_detected && current_velocity > target_velocity && car_speed > target_velocity ){
+            // equals approximately to 5 m/s^2 acceleration
+            current_velocity -= 0.224;
+          }
+
+          /** Set target vehicle spped to MAX if:
+           *  - there's no vehicle ahead (anymore).
+           *  - We are speeding up (e.g. simulation start)
+           */
+          else if(!leading_vehicle_detected && current_velocity < target_velocity && car_speed < target_velocity){
             target_velocity = 49.5;
+            // equals approximately to 5 m/s^2 acceleration
+            current_velocity += 0.224;
+            std::cout << car_speed << std::endl;
+            std::cout << "Speeding up to MAX target_velocity" << std::endl;
           }
 
           if (rest_path_x.size() < 2){
@@ -255,7 +268,7 @@ int main() {
 
           // fill the rest of the path planner
           for (size_t i = 1; i < MAX_HORIZON - rest_path_x.size(); ++i) {
-            double N = target_dist / (0.02*target_velocity / MPH_MPS_factor);
+            double N = target_dist / (0.02*current_velocity / MPH_MPS_factor);
             double x_point = x_add_on + (target_x/N);
             double y_point = spline(x_point);
 
