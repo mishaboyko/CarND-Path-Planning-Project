@@ -53,22 +53,24 @@ int main() {
 
 
     // start in lane 1 [0, 1, 2] from middle to curb.
-    int lane = 1;
+    int curr_lane = 1;
+
+    const int OFFSET_FROM_LANE_MID = 2;
 
     // because double solid line is 0 and we're in the middle of the 2nd lane and the lane width is 4m (4+2=6)
-    double next_d = 2+4 * lane;
+    double next_d = OFFSET_FROM_LANE_MID+4 * curr_lane;
 
-    // Max. allowed velocity in mph
-    const double MAX_VELOCITY = 49.5;
+    // Set to Max. allowed velocity first (49.5 mph)
+    double target_velocity = 49.5;
 
     const double MAX_HORIZON = 50;
 
     const double SAMPLE_PTS_DIST = 30.f; //in m
 
-    const double MPH_to_MPS_factor = 2.24;
+    const double MPH_MPS_factor = 2.24;
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy, &lane, &next_d, &MAX_VELOCITY, &MAX_HORIZON, &SAMPLE_PTS_DIST, &MPH_to_MPS_factor]
+  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s, &map_waypoints_dx,&map_waypoints_dy, &OFFSET_FROM_LANE_MID,
+              &curr_lane, &next_d, &target_velocity, &MAX_HORIZON, &SAMPLE_PTS_DIST, &MPH_MPS_factor]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -101,7 +103,14 @@ int main() {
           double end_path_s = j[1]["end_path_s"];
           double end_path_d = j[1]["end_path_d"];
 
-          // Sensor Fusion Data, a list of all other cars on the same side of the road.
+          /**
+           * Sensor Fusion Data, a list of all other cars on the same side of the road.
+           * 2D vector of cars, where 2nd is a car-specific:
+           * [ unique ID,
+           * X-position Cartesinan, Y-position Cartesian,
+           * X velocity (m/s), Y velocity (m/s),
+           * S-position Frenet, D-position Frenet ]
+           */
           auto sensor_fusion = j[1]["sensor_fusion"];
 
           json msgJson;
@@ -127,6 +136,49 @@ int main() {
           double ref_x = car_x;
           double ref_y = car_y;
           double ref_yaw = deg2rad(car_yaw);
+
+          /** Leading car detection
+           * If there is a path for a vehicle to drive -
+           * start Leading vehicle detection from the end of this path (ideally MAX_HORIZON points ahead of the vehicle).
+           */
+          double reference_s_value;
+          if (rest_path_x.size() > 0){
+            reference_s_value = end_path_s;
+          }
+
+          bool leading_vehicle_detected = false;
+
+          for(size_t i = 0; i < sensor_fusion.size(); ++i){
+            float leading_vehicle_d = sensor_fusion[i][6];
+            // check whether car is in my lane
+            //if(leading_vehicle_d < next_d + OFFSET_FROM_LANE_MID && leading_vehicle_d > next_d - OFFSET_FROM_LANE_MID){
+            if(leading_vehicle_d < (next_d+OFFSET_FROM_LANE_MID) && leading_vehicle_d > (next_d-OFFSET_FROM_LANE_MID)){
+              double vx = sensor_fusion[i][3];
+              double vy = sensor_fusion[i][4];
+
+              // Trigonometry, euclidean distance.
+              double leading_vehicle_speed = sqrt(vx*vx + vy*vy);
+              double leading_vehicle_s = sensor_fusion[i][5];
+
+              /** Extrapolate the S-position of the leading vehicle.
+               * Rationale: This position is a sensor data snapshot from previous cycle. And the algorithm processes (ideally) MAX_HORIZON points ahead.
+               */
+              //reference_s_value += (double)rest_path_x.size()*0.02 * leading_vehicle_speed;
+
+              // react on leading vehicle
+              if(leading_vehicle_s > reference_s_value && (leading_vehicle_s - reference_s_value) < 10){
+                std::cout << "Leading vehicle detected. Ego Speed adjusted" << std::endl;
+                target_velocity = leading_vehicle_speed * MPH_MPS_factor;
+                leading_vehicle_detected = true;
+              }
+            }
+          }
+          // re-set target vehicle if there's no vehicle ahead (anymore).
+          if(!leading_vehicle_detected && car_speed < 48){
+            std::cout << car_speed << std::endl;
+            std::cout << "Speed restored to MAX" << std::endl;
+            target_velocity = 49.5;
+          }
 
           if (rest_path_x.size() < 2){
 
@@ -203,7 +255,7 @@ int main() {
 
           // fill the rest of the path planner
           for (size_t i = 1; i < MAX_HORIZON - rest_path_x.size(); ++i) {
-            double N = target_dist / (0.02*MAX_VELOCITY/ MPH_to_MPS_factor);
+            double N = target_dist / (0.02*target_velocity / MPH_MPS_factor);
             double x_point = x_add_on + (target_x/N);
             double y_point = spline(x_point);
 
