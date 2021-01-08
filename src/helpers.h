@@ -9,6 +9,8 @@
 using std::string;
 using std::vector;
 
+struct Helper {
+
 // Checks if the SocketIO event has JSON data.
 // If there is data the JSON object in string format will be returned,
 //   else the empty string "" will be returned.
@@ -153,5 +155,5 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s,
 
   return {x,y};
 }
-
+};
 #endif  // HELPERS_H
