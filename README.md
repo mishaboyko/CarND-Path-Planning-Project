@@ -1,7 +1,59 @@
 # CarND-Path-Planning-Project
+
 Self-Driving Car Engineer Nanodegree Program
-   
+
+## Model Documentation
+
+All the logic for environment perception and path planning is consolidated in the `Vehicle Object` [vehicle.cpp](./src/vehicle.cpp), [vehicle.h](./src/vehicle.h).  In this section I will reference the [vehicle.cpp](./src/vehicle.cpp) file only.
+
+### Code walkthrough
+
+At every new sensor data input from the Simulation a member function `compute_next_points()` , Lines 349-398 is invoked. To compute the waypoints of the trajectory ahead, next to the code from tutorial and lessons (Freenet vs. Cartesian coordinate systems, extrapolation, re-usage of the previous trajectory, calculating polynomial using spline, etc.), two more member functions are invoked:
+
+* `look_ahead()`, Lines 266-287. Here it is checked, whether:
+  1. A vehicle ahead of the ego-vehicle is detected `is_vehicle_ahead()` Lines 44-95. To do so, I iterate over all the sensor data, look for the vehicles in the ego-lane, whose s-value is larger than of the ego-vehicle, but within a range of 30 points (Lines 65-92) from the end of my trajectory (Line 59). I extract the speed of the preceding vehicle and set it as a reference speed of the ego-vehicle. Here it is important to iterate over all vehicles within the lane and choose the closest one, because it happens, that:
+     * a first vehicle in the ego-lane ahead is not the closest vehicle to the ego-vehicle
+     * vehicles from other lanes cut-in in front of the ego-vehicle.
+  2. If the leading vehicle detected, the velocity is being reduced to the velocity of the preceding vehicle and the tracking of the surrounding vehicles starts with `analyze_surrounding()`, Lines 97-264. This member function:
+     1. Sorts all detected vehicles into corresponding lanes ahead and behind the ego-vehicle (Lines 98-145)
+     2. Contains the heart of the path planning:
+        * Priority 1: select an empty lane ahead of vehicle (Lines 164-170)
+        * Priority 2: select a lane with a fastest vehicle ahead (Lanes 173-200). In case of ambiguity, the lane with the vehicle further away is selected. This cost function, however, doesn't consider the acceleration of the vehicle. This point is addressed in Point 6 of section [Ideas for improvement](#Ideas for improvement).
+        * If any other lane than the ego-lane is selected as a best lane:
+          * check, whether the closes succeeding vehicle in that lane is far enough to perform a maneuver (Lines 202-226)
+          * In case of the double-lane change, check whether the middle lane is cleared for the maneuver  - enough distance to preceding/succeeding vehicles (Lines 228-257)
+  3. Otherwise a command to the ego-vehicle is given to speed up to the maximum velocity (`target_velocity`) with maximum acceleration (`MAX_ACC`)
+* `extend_previous_path()`, Lines 296-354. Here the 2 last points from the previously calculated trajectory are used as a basis for new trajectory calculation using [spline.h](./src/spline.h) and creating reference points at 30, 60, and 90 for the spline's polynomial fitting. The spline is then returned, from where the necessary amount of waypoints is extracted for the 60-point-long ego-vehicle trajectory.
+
+
+---
+**NOTE**
+The important thing for a smooth lane change (especially double lane change at approx. 50mph) was setting the amount of points withing trajectory (and also tripled of it as an input for the spline) to **60** in the `SAMPLE_PTS_DIST`  member variable.
+
+---
+
+Here is an exemplary screenshot from the simulation drive:
+
+![img.png](./images/img.png)
+
+### Ideas for improvement
+
+Of course, current implementation is good enough to complete the task. Further improvements can be done:
+
+1. Extend the solution to variable amount of lanes (currently only 3 are supported).
+2. Include more cost functions for driving dynamics, such as:
+   1. Gradual speed decrease/increase.
+   2. Variable trajectory length (and correspondingly turn/lane-switch angles) based on the current speed.
+   3. Variable distance to preceding vehicle depending on the speed.
+3. Set most right lane as a preferred driving lane (realistic use-case in Germany).
+4. Switch to right lanes if they are free.
+5. Overtake only left.
+6. Consider acceleration of the surrounding vehicles.
+
+## Project preparation
+
 ### Simulator.
+
 You can download the Term3 Simulator which contains the Path Planning Project from the [releases tab (https://github.com/udacity/self-driving-car-sim/releases/tag/T3_v1.2).  
 
 To run the simulator on Mac/Linux, first make the binary file executable with the following command:
@@ -74,6 +126,7 @@ A really helpful resource for doing this project and creating smooth trajectorie
 ## Dependencies
 
 * cmake >= 3.5
+  
   * All OSes: [click here for installation instructions](https://cmake.org/install/)
 * make >= 4.1
   * Linux: make is installed by default on most Linux distros
