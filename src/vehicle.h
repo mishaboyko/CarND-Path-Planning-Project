@@ -23,6 +23,11 @@ class Vehicle {
         void parseMessage(json j);
 
     private:
+        // Leading car detection
+        bool is_vehicle_ahead();
+
+        void analyze_surrounding();
+
         void look_ahead();
         tk::spline extend_previous_path(vector<double> &pts_x, vector<double> &pts_y);
 
@@ -64,11 +69,15 @@ class Vehicle {
         double target_velocity = 49.5; // in mph)
         double current_velocity = 0.01;
         const double MAX_HORIZON = 50;
-        const double SAMPLE_PTS_DIST = 30.f; //in m
+        const double SAMPLE_PTS_DIST = 60.f; //in m
         const double MPH_MPS_factor = 2.24;
 
         // equals approximately to 2 * 5 m/s^2 acceleration
         const double MAX_ACC = .224*2;
+
+        const double SAFETY_DISTANCE_AHEAD = 20;
+
+        const double SAFETY_DISTANCE_BEHIND = 10;
 
         Helper helper;
 };
